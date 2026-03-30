@@ -188,5 +188,26 @@ def main():
     print_prediction_report(results, annotations)
 
 
+def run_on_image(image_path, templates_dir=TEMPLATES_DIR, output_dir=OUTPUT_DIR):
+    """
+        Callable entry point for app.py — skips argparse, returns result dict.
+    """
+    if os.path.exists(output_dir):
+        shutil.rmtree(output_dir)
+    os.makedirs(output_dir, exist_ok=True)
+
+    descriptor_store = get_template_descriptors(
+        templates_dir=templates_dir,
+        cache_path=CACHE_FILE
+    )
+
+    results = run_pipeline(image_path, descriptor_store, annotations={})
+
+    for result in results:
+        save_annotated_image(result, output_dir)
+
+    return results[0] if results else None
+
+
 if __name__ == "__main__":
     main()
