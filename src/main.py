@@ -1,8 +1,8 @@
 import os
-import sys
 import cv2
 import argparse
 import csv
+import shutil
 from pathlib import Path
 from templates import get_template_descriptors, summarize_descriptor_store
 from pipeline import run_pipeline
@@ -10,7 +10,6 @@ from pipeline import run_pipeline
 TEMPLATES_DIR   = "templates"
 OUTPUT_DIR      = "outputs"
 CACHE_FILE      = "templates_cache.pkl"
-ANNOTATIONS_CSV = "db_lisa_tiny/annotations.csv"
 
 
 def save_annotated_image(result, output_dir):
@@ -64,12 +63,17 @@ def load_annotations(csv_path):
             fname = Path(row["filename"].strip()).stem
             if fname not in annotations:
                 annotations[fname] = {
-                    "class": row["class"].strip(),
-                    "x1":    int(row["x1"]),
-                    "y1":    int(row["y1"]),
-                    "x2":    int(row["x2"]),
-                    "y2":    int(row["y2"]),
+                    "class": row["class"].strip()
                 }
+            
+                if all(k in row for k in ("x1", "y1", "x2", "y2")):
+                    annotations[fname].update({
+                        "x1": int(row["x1"]),
+                        "y1": int(row["y1"]),
+                        "x2": int(row["x2"]),
+                        "y2": int(row["y2"]),
+                    })
+
     print(f"  Loaded {len(annotations)} annotations from '{csv_path}'")
     return annotations
 
@@ -79,17 +83,15 @@ def print_prediction_report(results, annotations):
     Print per-image accuracy vs ground-truth annotations.
 
     Only runs when the pipeline was executed in template mode (db_lisa_tiny).
-    else skipped
+    If results were produced without annotations (custom input), nothing is done
     """
     # Check mode via the flag attached by run_pipeline
-    use_template = any(r.get("use_template", False) for r in results)
-
-    if not use_template:
+    if not annotations:
         print(f"\n{'='*50}")
         print(f"  PREDICTION REPORT")
         print(f"{'='*50}")
-        print(f"  Skipped — evaluation requires db_lisa_tiny input")
-        print(f"  (no ground-truth annotations available for custom images)")
+        print(f"  Skipped — no annotations available.")
+        print(f"  Pass --annotations <path> to enable evaluation.")
         print(f"{'='*50}\n")
         return
 
@@ -143,8 +145,8 @@ def parse_args():
         help=f"Folder to save annotated images (default: '{OUTPUT_DIR}')."
     )
     parser.add_argument(
-        "--annotations", default=ANNOTATIONS_CSV,
-        help=f"Path to annotations CSV (default: '{ANNOTATIONS_CSV}')."
+        "--annotations", default=None,
+        help=f"Path to annotations CSV."
     )
     return parser.parse_args()
 
@@ -152,6 +154,9 @@ def parse_args():
 def main():
     args = parse_args()
 
+    # Removes previous run results
+    if os.path.exists(args.output):
+        shutil.rmtree(args.output)
     os.makedirs(args.output, exist_ok=True)
 
     # Load / compute template descriptors
@@ -162,13 +167,13 @@ def main():
     )
     summarize_descriptor_store(descriptor_store)
 
-    use_template = "db_lisa_tiny" in args.input
-    annotations  = {}
-    if use_template:
+    annotations_path = args.annotations
+    annotations   = {}
+    if annotations_path:
         print("\n[2/4] Loading annotations...")
-        annotations = load_annotations(args.annotations)
+        annotations = load_annotations(annotations_path)
     else:
-        print("\n[2/4] Skipping annotations (not a db_lisa_tiny input).")
+        print("\n[2/4] Skipping annotations(no --annotations provided).")
 
     # Run pipeline
     print("\n[3/4] Running pipeline...")

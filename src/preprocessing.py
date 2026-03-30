@@ -4,8 +4,7 @@ import numpy as np
 # HSV color ranges per color name
 HSV_COLOR_RANGES = {
     "red": [
-        (np.array([0,   70,  50]),  np.array([10,  255, 255])),   # lower red
-        (np.array([160, 70,  50]),  np.array([180, 255, 255])),   # upper red
+        (np.array([0, 70, 50]), np.array([180, 255, 255])),
     ],
     "white": [
         (np.array([0,   0,   180]), np.array([180, 40,  255])),   # low saturation, high value
@@ -148,6 +147,7 @@ def preprocess_query_for_class(img, class_name):
     mask = build_class_mask(img, class_name)
     masked_img = apply_mask_to_image(img, mask)
     gray = preprocess_query(masked_img)
+    # gray = preprocess_query(img)
     return gray
 
 
@@ -162,4 +162,5 @@ def preprocess_template_for_class(img, class_name):
     mask = build_class_mask(img, class_name)
     masked_img = apply_mask_to_image(img, mask)
     gray = preprocess_template(masked_img)
+    # gray = preprocess_query(img)
     return gray

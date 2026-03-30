@@ -1,6 +1,4 @@
-import os
 import cv2
-import numpy as np
 from pathlib import Path
 from matching import score_all_classes, predict_class
 
@@ -8,7 +6,6 @@ IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png"}
 
 WINDOW_SIZE  = 64
 
-# For video processing(yet to be finished)
 def _generate_windows(img_h, img_w):
     """
     Yield (x1, y1, x2, y2) for every window position.
@@ -69,12 +66,9 @@ def _sliding_window(img, descriptor_store):
     return detections[0]
 
 
-def process_single_image(img_path, descriptor_store, annotation, use_template=True):
+def process_single_image(img_path, descriptor_store, annotation):
     """
     Run the full detection pipeline on one image.
-
-    If use_template is True and an annotation is available => then image is cropped
-    Otherwise the full image is used.
     """
     img_path = str(img_path)
     img = cv2.imread(img_path)
@@ -88,8 +82,13 @@ def process_single_image(img_path, descriptor_store, annotation, use_template=Tr
             "status":     "load_error",
         }
 
+    has_bbox = (
+        annotation is not None and
+        all(k in annotation for k in ("x1", "y1", "x2", "y2"))
+    )
     box = None
-    if use_template and annotation is not None:
+
+    if has_bbox:
         x1, y1, x2, y2 = annotation["x1"], annotation["y1"], annotation["x2"], annotation["y2"]
         crop = img[y1:y2, x1:x2]
         crop = cv2.resize(crop, (128, 128), interpolation=cv2.INTER_CUBIC)
@@ -120,7 +119,7 @@ def process_single_image(img_path, descriptor_store, annotation, use_template=Tr
     }
 
 
-def process_folder(folder_path, descriptor_store, annotations, use_template=True):
+def process_folder(folder_path, descriptor_store, annotations):
     """
     Run the pipeline on every image in a folder.
     """
@@ -135,8 +134,8 @@ def process_folder(folder_path, descriptor_store, annotations, use_template=True
     results = []
     for idx, img_file in enumerate(image_files, 1):
         print(f"  [{idx:>3}/{len(image_files)}] Processing: {img_file.name}")
-        annotation = annotations.get(img_file.stem) if use_template else None
-        result = process_single_image(img_file, descriptor_store, annotation, use_template)
+        annotation = annotations.get(img_file.stem)
+        result = process_single_image(img_file, descriptor_store, annotation)
         results.append(result)
 
     return results
@@ -159,20 +158,10 @@ def run_pipeline(input_path, descriptor_store, annotations):
     if not path.exists():
         raise FileNotFoundError(f"Input path not found: {input_path}")
 
-    use_template = "db_lisa_tiny" in str(path)
-
-    if use_template:
-        print("  Mode: db_lisa_tiny — using annotations for cropping & evaluation.")
-    else:
-        print("  Mode: custom input — running on full images, no annotation lookup.")
-
     if path.is_dir():
-        results = process_folder(path, descriptor_store, annotations, use_template)
+        results = process_folder(path, descriptor_store, annotations)
     else:
-        annotation = annotations.get(path.stem) if use_template else None
-        results    = [process_single_image(path, descriptor_store, annotation, use_template)]
-
-    for r in results:
-        r["use_template"] = use_template
+        annotation = annotations.get(path.stem)
+        results    = [process_single_image(path, descriptor_store, annotation)]
 
     return results

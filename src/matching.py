@@ -1,10 +1,11 @@
 import cv2
 import numpy as np
 from preprocessing import preprocess_query_for_class, preprocess_query, CLASS_COLORS
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
-MIN_GOOD_MATCHES   = 6
-MIN_MATCH_COUNT = 6
-SIFT_NFEATURES  = 500
+MIN_GOOD_MATCHES   = 8
+MIN_MATCH_COUNT = 8
+SIFT_NFEATURES  = 750
 TOP_K_TEMPLATES    = 3
 
 
@@ -92,14 +93,14 @@ def score_all_classes(img, descriptor_store):
     """
     sift = _get_sift()
 
-    gray = preprocess_query(img)
-    kp, des = sift.detectAndCompute(gray, None)
-
-    if des is None or len(kp) < MIN_MATCH_COUNT:
-        return {}
-
     class_scores = {}
     for class_name in CLASS_COLORS.keys():
+        gray = preprocess_query_for_class(img, class_name)
+        kp, des = sift.detectAndCompute(gray, None)
+
+        if des is None or len(kp) < MIN_MATCH_COUNT:
+            continue
+
         score = score_single_class(des, class_name, descriptor_store)
         if score is not None:
             class_scores[class_name] = score
