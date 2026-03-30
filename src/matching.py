@@ -1,6 +1,6 @@
 import cv2
 import numpy as np
-from preprocessing import preprocess_query_for_class, CLASS_COLORS
+from preprocessing import preprocess_query_for_class, preprocess_query, CLASS_COLORS
 
 MIN_GOOD_MATCHES   = 6
 MIN_MATCH_COUNT = 6
@@ -91,16 +91,15 @@ def score_all_classes(img, descriptor_store):
         Classes with no valid matches are excluded from the dict.
     """
     sift = _get_sift()
+
+    gray = preprocess_query(img)
+    kp, des = sift.detectAndCompute(gray, None)
+
+    if des is None or len(kp) < MIN_MATCH_COUNT:
+        return {}
+
     class_scores = {}
-
     for class_name in CLASS_COLORS.keys():
-        gray = preprocess_query_for_class(img, class_name)
-        kp, des = sift.detectAndCompute(gray, None)
-
-        # not enough keypoints => skip
-        if des is None or len(kp) < MIN_MATCH_COUNT:
-            continue
-
         score = score_single_class(des, class_name, descriptor_store)
         if score is not None:
             class_scores[class_name] = score

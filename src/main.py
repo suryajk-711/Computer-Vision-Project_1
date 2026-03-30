@@ -3,12 +3,9 @@ import sys
 import cv2
 import argparse
 import csv
-import numpy as np
 from pathlib import Path
 from templates import get_template_descriptors, summarize_descriptor_store
 from pipeline import run_pipeline
-import matplotlib.pyplot as plt
-import seaborn as sns
 
 TEMPLATES_DIR   = "templates"
 OUTPUT_DIR      = "outputs"
@@ -78,6 +75,24 @@ def load_annotations(csv_path):
 
 
 def print_prediction_report(results, annotations):
+    """
+    Print per-image accuracy vs ground-truth annotations.
+
+    Only runs when the pipeline was executed in template mode (db_lisa_tiny).
+    else skipped
+    """
+    # Check mode via the flag attached by run_pipeline
+    use_template = any(r.get("use_template", False) for r in results)
+
+    if not use_template:
+        print(f"\n{'='*50}")
+        print(f"  PREDICTION REPORT")
+        print(f"{'='*50}")
+        print(f"  Skipped — evaluation requires db_lisa_tiny input")
+        print(f"  (no ground-truth annotations available for custom images)")
+        print(f"{'='*50}\n")
+        return
+
     correct      = 0
     mispredicted = 0
     no_pred      = 0
@@ -147,9 +162,13 @@ def main():
     )
     summarize_descriptor_store(descriptor_store)
 
-    # Load annotations
-    print("\n[2/4] Loading annotations...")
-    annotations = load_annotations(args.annotations)
+    use_template = "db_lisa_tiny" in args.input
+    annotations  = {}
+    if use_template:
+        print("\n[2/4] Loading annotations...")
+        annotations = load_annotations(args.annotations)
+    else:
+        print("\n[2/4] Skipping annotations (not a db_lisa_tiny input).")
 
     # Run pipeline
     print("\n[3/4] Running pipeline...")
