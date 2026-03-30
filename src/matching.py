@@ -2,8 +2,10 @@ import cv2
 import numpy as np
 from preprocessing import preprocess_query_for_class, CLASS_COLORS
 
-MIN_MATCH_COUNT = 8
+MIN_GOOD_MATCHES   = 6
+MIN_MATCH_COUNT = 6
 SIFT_NFEATURES  = 500
+TOP_K_TEMPLATES    = 3
 
 
 def _get_sift():
@@ -29,18 +31,19 @@ def match_descriptors(des_query, des_template):
     if des_query is None or des_template is None:
         return None
 
-    bf = cv2.BFMatcher(cv2.NORM_L2)
+    bf      = cv2.BFMatcher(cv2.NORM_L2, crossCheck=True)
     matches = bf.match(des_query, des_template)
 
-    if len(matches) < MIN_MATCH_COUNT:
+    # absolute distance threshold — drop junk matches
+    good = [m for m in matches if m.distance < 250]
+
+    if len(good) < MIN_GOOD_MATCHES:
         return None
 
-    distances  = [m.distance for m in matches]
-    avg_dist   = np.mean(distances)
+    avg_dist = float(np.mean([m.distance for m in good]))
+    coverage = len(good) / len(des_query)   # rewards high explanation of query
 
-    normalized = avg_dist / len(matches)
-
-    return normalized
+    return avg_dist / (coverage + 1e-6)
 
 
 def score_single_class(des_query, class_name, descriptor_store):
@@ -70,7 +73,7 @@ def score_single_class(des_query, class_name, descriptor_store):
     if not scores:
         return None
 
-    return float(np.mean(scores))
+    return float(np.mean(sorted(scores)[:TOP_K_TEMPLATES]))
 
 
 def score_all_classes(img, descriptor_store):
@@ -109,11 +112,9 @@ def predict_class(class_scores):
     """
     Pick the class with the lowest average distance score.
     """
-    if not class_scores:
-        return None, 0.0, []
-
     # Sort ascending
+    if not class_scores:
+        return None, []
     ranked = sorted(class_scores.items(), key=lambda x: x[1])
     predicted_class, best_score = ranked[0]
-
     return predicted_class, ranked

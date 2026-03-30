@@ -1,11 +1,75 @@
 import os
 import cv2
+import numpy as np
 from pathlib import Path
 from matching import score_all_classes, predict_class
 
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png"}
 
-def process_single_image(img_path, descriptor_store):
+WINDOW_SIZE  = 64
+
+# For video processing(yet to be finished)
+def _generate_windows(img_h, img_w):
+    """
+    Yield (x1, y1, x2, y2) for every window position.
+    Clamps last window to image edge so borders aren't missed.
+    """
+    y = 0
+    while y < img_h:
+        x = 0
+        while x < img_w:
+            x2 = min(x + WINDOW_SIZE, img_w)
+            y2 = min(y + WINDOW_SIZE, img_h)
+            x1 = max(0, x2 - WINDOW_SIZE)
+            y1 = max(0, y2 - WINDOW_SIZE)
+            yield (x1, y1, x2, y2)
+            if x + WINDOW_SIZE >= img_w:
+                break
+            x += WINDOW_SIZE
+        if y + WINDOW_SIZE >= img_h:
+            break
+        y += WINDOW_SIZE
+
+
+def _sliding_window(img, descriptor_store):
+    """
+    Slide WINDOW_SIZES over img, score each crop.
+
+    Returns best detection dict or None.
+        {"box": (x1,y1,x2,y2), "class": str, "score": float}
+    """
+    img_h, img_w = img.shape[:2]
+    detections = []
+
+    windows = list(_generate_windows(img_h, img_w))
+
+    for (x1, y1, x2, y2) in windows:
+        crop = img[y1:y2, x1:x2]
+        if crop.shape[0] < 8 or crop.shape[1] < 8:
+            continue
+
+        class_scores = score_all_classes(crop, descriptor_store)
+        predicted, ranked = predict_class(class_scores)
+
+        if predicted is None:
+            continue
+
+        best_score = ranked[0][1]
+
+        detections.append({
+            "box":   (x1, y1, x2, y2),
+            "class": predicted,
+            "score": best_score,
+        })
+
+    if not detections:
+        return None
+
+    detections.sort(key=lambda d: d["score"])
+    return detections[0]
+
+
+def process_single_image(img_path, descriptor_store, annotation):
     """
     Run the full detection pipeline on one image.
     """
@@ -20,22 +84,36 @@ def process_single_image(img_path, descriptor_store):
             "scores":     [],
             "status":     "load_error",
         }
+    
+    x1, y1, x2, y2 = annotation["x1"], annotation["y1"], annotation["x2"], annotation["y2"]
+    crop = img[y1:y2, x1:x2]
 
-    class_scores = score_all_classes(img, descriptor_store)
+    crop = cv2.resize(crop, (128, 128), interpolation=cv2.INTER_CUBIC)
+    
+    class_scores = score_all_classes(crop, descriptor_store)
     predicted, ranked = predict_class(class_scores)
 
-    status = "ok" if predicted is not None else "no_match"
+    if predicted is None:
+        return {
+            "image_path": img_path,
+            "image":      img,
+            "predicted":  None,
+            "scores":     [],
+            "status":     "no_match",
+        }
 
+    print(f"  {Path(img_path).name} => {predicted}")
     return {
         "image_path": img_path,
         "image":      img,
         "predicted":  predicted,
         "scores":     ranked,
-        "status":     status,
+        "status":     "ok",
+        "box":        (x1, y1, x2, y2) if annotation else None,
     }
 
 
-def process_folder(folder_path, descriptor_store):
+def process_folder(folder_path, descriptor_store, annotations):
     """
     Run the pipeline on every image in a folder.
     """
@@ -50,13 +128,14 @@ def process_folder(folder_path, descriptor_store):
     results = []
     for idx, img_file in enumerate(image_files, 1):
         print(f"  [{idx:>3}/{len(image_files)}] Processing: {img_file.name}")
-        result = process_single_image(img_file, descriptor_store)
+        annotation = annotations.get(img_file.stem)
+        result = process_single_image(img_file, descriptor_store, annotation)
         results.append(result)
 
     return results
 
 
-def run_pipeline(input_path, descriptor_store):
+def run_pipeline(input_path, descriptor_store, annotations):
     """
     Main entry point. Auto-detects whether input is a single image or folder.
 
@@ -73,8 +152,7 @@ def run_pipeline(input_path, descriptor_store):
         raise FileNotFoundError(f"Input path not found: {input_path}")
 
     if path.is_dir():
-        return process_folder(path, descriptor_store)
+        return process_folder(path, descriptor_store, annotations)
 
-    elif path.is_file():
-        result = process_single_image(path, descriptor_store)
-        return [result]
+    annotation = annotations.get(path.stem)
+    return [process_single_image(path, descriptor_store, annotation)]
